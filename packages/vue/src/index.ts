@@ -1,5 +1,6 @@
 // This entry is the "full-build" that includes both the runtime
 // and the compiler, and supports on-the-fly compilation of the template option.
+//这个入口包含运行时的“full-build”和编译器，并支持动态编译模板选项。
 import { initDev } from './dev'
 import { compile, CompilerOptions, CompilerError } from '@vue/compiler-dom'
 import { registerRuntimeCompiler, RenderFunction, warn } from '@vue/runtime-dom'
@@ -10,7 +11,7 @@ import { InternalRenderFunction } from 'packages/runtime-core/src/component'
 if (__DEV__) {
   initDev()
 }
-
+// 创建缓存对象，缓存编译过的模板
 const compileCache: Record<string, RenderFunction> = Object.create(null)
 
 function compileToFunction(
@@ -25,25 +26,32 @@ function compileToFunction(
       return NOOP
     }
   }
-
+  // 创建 key
   const key = template
+  // 如果之前编译过，直接返回
   const cached = compileCache[key]
   if (cached) {
     return cached
   }
-
+  // 如果第一个字符是 # 说明是一个 dom id
   if (template[0] === '#') {
+    // 获取 dom
     const el = document.querySelector(template)
+    // 如果没有获取到节点，返回警告
     if (__DEV__ && !el) {
       warn(`Template element not found or is empty: ${template}`)
     }
     // __UNSAFE__
     // Reason: potential execution of JS expressions in in-DOM template.
+    // 因为在 dom 模板中可以执行 JS 表达式
     // The user must make sure the in-DOM template is trusted. If it's rendered
+    // 所以必须确保 dom 模板是可信的，如果它要被呈现
     // by the server, the template should not contain any user data.
+    // 在服务器端，模板不应该包含任何用户数据
+    // 如果获取到了节点，更新 template 为 dom innerHTML，否则为空串
     template = el ? el.innerHTML : ``
   }
-
+  // 编译模板字符串，得到一个 render 函数
   const { code } = compile(
     template,
     extend(
@@ -79,12 +87,14 @@ function compileToFunction(
   ) as RenderFunction
 
   // mark the function as runtime compiled
+  // 将函数标记为运行时编译的
   ;(render as InternalRenderFunction)._rc = true
-
+  // 将 render 通过 key 保存并返回
   return (compileCache[key] = render)
 }
 
 registerRuntimeCompiler(compileToFunction)
-
+// 将 compileToFunction 作为 compile 返回
 export { compileToFunction as compile }
+// 导入 runtime-dom 中的所有导出，并再次导出
 export * from '@vue/runtime-dom'

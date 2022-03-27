@@ -318,6 +318,7 @@ function baseCreateRenderer(
 ): HydrationRenderer
 
 // implementation
+// 2000 行的超长函数，path diff mountElement mountChildren unmount 都在这里
 function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions
@@ -1749,6 +1750,7 @@ function baseCreateRenderer(
   }
 
   // can be all-keyed or mixed
+  // 传说中的 diff 算法
   const patchKeyedChildren = (
     c1: VNode[],
     c2: VNodeArrayChildren,
@@ -1766,6 +1768,7 @@ function baseCreateRenderer(
     let e2 = l2 - 1 // next ending index
 
     // 1. sync from start
+    // 首先从前向后对比，如果某一对 VNode type 不同，则停止
     // (a b) c
     // (a b) d e
     while (i <= e1 && i <= e2) {
@@ -1792,6 +1795,7 @@ function baseCreateRenderer(
     }
 
     // 2. sync from end
+    // 然后从后向前对比，如果某一对 VNode type 不同，则停止
     // a (b c)
     // d e (b c)
     while (i <= e1 && i <= e2) {
@@ -1819,6 +1823,7 @@ function baseCreateRenderer(
     }
 
     // 3. common sequence + mount
+    // 如果老的都已经处理完，新的还有，进行挂载
     // (a b)
     // (a b) c
     // i = 2, e1 = 1, e2 = 2
@@ -1849,6 +1854,7 @@ function baseCreateRenderer(
     }
 
     // 4. common sequence + unmount
+    // 如果新的都处理完，老的还有，进行卸载
     // (a b) c
     // (a b)
     // i = 2, e1 = 2, e2 = 1
@@ -1863,6 +1869,7 @@ function baseCreateRenderer(
     }
 
     // 5. unknown sequence
+    // 最麻烦的部分来了
     // [i ... e1 + 1]: a b [c d e] f g
     // [i ... e2 + 1]: a b [e d c h] f g
     // i = 2, e1 = 4, e2 = 5
@@ -1871,6 +1878,7 @@ function baseCreateRenderer(
       const s2 = i // next starting index
 
       // 5.1 build key:index map for newChildren
+      // 创建 新的 VNode key:index 的映射
       const keyToNewIndexMap: Map<string | number | symbol, number> = new Map()
       for (i = s2; i <= e2; i++) {
         const nextChild = (c2[i] = optimized
@@ -1891,31 +1899,39 @@ function baseCreateRenderer(
       // 5.2 loop through old children left to be patched and try to patch
       // matching nodes & remove nodes that are no longer present
       let j
+      // 记录已经 patch 的数量
       let patched = 0
+      // 记录需要 patch 的数量
       const toBePatched = e2 - s2 + 1
+      // 是否需要移动
       let moved = false
       // used to track whether any node has moved
+      // 记录老的 VNode 在新的里面的最大下标
       let maxNewIndexSoFar = 0
       // works as Map<newIndex, oldIndex>
       // Note that oldIndex is offset by +1
       // and oldIndex = 0 is a special value indicating the new node has
       // no corresponding old node.
       // used for determining longest stable subsequence
+      // 创建 newVNode index => oldVNode index 的映射
       const newIndexToOldIndexMap = new Array(toBePatched)
       for (i = 0; i < toBePatched; i++) newIndexToOldIndexMap[i] = 0
-
+      // 遍历 oldVNode
       for (i = s1; i <= e1; i++) {
         const prevChild = c1[i]
+        // 如果已经patch的数量大于等于要patch的数量，说明需要处理的都已经处理完了，剩余的 oldVNode 卸载
         if (patched >= toBePatched) {
           // all new children have been patched so this can only be a removal
           unmount(prevChild, parentComponent, parentSuspense, true)
           continue
         }
         let newIndex
+        // 如果 oldVNode 有 key，尝试用 oldVNode的key和keyToNewIndexMap获取newVNode的index
         if (prevChild.key != null) {
           newIndex = keyToNewIndexMap.get(prevChild.key)
         } else {
           // key-less node, try to locate a key-less node of the same type
+          // 如果 oldVNode 没有 key，尝试在 newVNode 中找一个还没有和 oldVNode 配对并且 VNode type 相同的 newVNode
           for (j = s2; j <= e2; j++) {
             if (
               newIndexToOldIndexMap[j - s2] === 0 &&
@@ -1926,15 +1942,20 @@ function baseCreateRenderer(
             }
           }
         }
+        // 如果无法获取到 newIndex，说明oldVNode没有对应的newVNode，进行卸载
         if (newIndex === undefined) {
           unmount(prevChild, parentComponent, parentSuspense, true)
         } else {
+          // 如果可以获取到 newIndex，说明oldVNode有对应的newVNode，收集 index 映射
           newIndexToOldIndexMap[newIndex - s2] = i + 1
+          // 如果newIndex>=maxNewIndexSoFar,说明没有发生相对位置的变化
           if (newIndex >= maxNewIndexSoFar) {
             maxNewIndexSoFar = newIndex
           } else {
+            // 发生了相对位置的变化，更新 moved 为 true
             moved = true
           }
+          // 更新 VNode
           patch(
             prevChild,
             c2[newIndex] as VNode,
@@ -1952,16 +1973,21 @@ function baseCreateRenderer(
 
       // 5.3 move and mount
       // generate longest stable subsequence only when nodes have moved
+      // 如果需要移动，获取最长递增子序列
       const increasingNewIndexSequence = moved
         ? getSequence(newIndexToOldIndexMap)
         : EMPTY_ARR
       j = increasingNewIndexSequence.length - 1
       // looping backwards so that we can use last patched node as anchor
+      // 从后往前处理，保证没有无效处理
       for (i = toBePatched - 1; i >= 0; i--) {
+        // 获取 newVNode index
         const nextIndex = s2 + i
+        // 获取 newVNode
         const nextChild = c2[nextIndex] as VNode
         const anchor =
           nextIndex + 1 < l2 ? (c2[nextIndex + 1] as VNode).el : parentAnchor
+        // 如果没有与之对应的 oldVNode，直接挂载
         if (newIndexToOldIndexMap[i] === 0) {
           // mount new
           patch(
@@ -1978,7 +2004,10 @@ function baseCreateRenderer(
         } else if (moved) {
           // move if:
           // There is no stable subsequence (e.g. a reverse)
+          // j<0 说明最长递增子序列为空
           // OR current node is not among the stable sequence
+          // i !== increasingNewIndexSequence[j]，说明当前 VNode 不在最长递增子序列中
+          // 只有这种才进行移动
           if (j < 0 || i !== increasingNewIndexSequence[j]) {
             move(nextChild, container, anchor, MoveType.REORDER)
           } else {

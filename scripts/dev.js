@@ -1,14 +1,20 @@
 // Using esbuild for faster dev builds.
+//使用esbuild快速开发构建。
 // We are still using Rollup for production builds because it generates
 // smaller files w/ better tree-shaking.
+//我们仍然使用Rollup生产构建，因为它生成更小的文件/更好的摇树。
 
 // @ts-check
 const { build } = require('esbuild')
 const nodePolyfills = require('@esbuild-plugins/node-modules-polyfill')
 const { resolve, relative } = require('path')
+// 使用 minimist 获取打包命令传入的参数 以我们的命令为例：得到 { _: [], sourcemap: true }
 const args = require('minimist')(process.argv.slice(2))
+// args._收集不加 - 的参数
 
+// 获取打包的目标，基于以上的数据得到 'vue'
 const target = args._[0] || 'vue'
+// 获取输出格式
 const format = args.f || 'global'
 const inlineDeps = args.i || args.inline
 const pkg = require(resolve(__dirname, `../packages/${target}/package.json`))

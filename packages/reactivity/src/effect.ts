@@ -199,6 +199,7 @@ export function resetTracking() {
   shouldTrack = last === undefined ? true : last
 }
 
+// 收集依赖
 export function track(target: object, type: TrackOpTypes, key: unknown) {
   if (shouldTrack && activeEffect) {
     let depsMap = targetMap.get(target)
@@ -209,7 +210,7 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
     if (!dep) {
       depsMap.set(key, (dep = createDep()))
     }
-
+    // 获取事件信息
     const eventInfo = __DEV__
       ? { effect: activeEffect, target, type, key }
       : undefined
@@ -217,7 +218,7 @@ export function track(target: object, type: TrackOpTypes, key: unknown) {
     trackEffects(dep, eventInfo)
   }
 }
-
+// 具体的收集依赖过程
 export function trackEffects(
   dep: Dep,
   debuggerEventExtraInfo?: DebuggerEventExtraInfo
@@ -248,7 +249,7 @@ export function trackEffects(
     }
   }
 }
-
+// 触发依赖
 export function trigger(
   target: object,
   type: TriggerOpTypes,
@@ -335,7 +336,7 @@ export function trigger(
     }
   }
 }
-
+// 真正触发依赖的动作
 export function triggerEffects(
   dep: Dep | ReactiveEffect[],
   debuggerEventExtraInfo?: DebuggerEventExtraInfo

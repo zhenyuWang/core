@@ -7,18 +7,23 @@ import json from '@rollup/plugin-json'
 if (!process.env.TARGET) {
   throw new Error('TARGET package must be specified via --environment flag.')
 }
-
+// 获取版本
 const masterVersion = require('./package.json').version
+// 获取 packages 目录
 const packagesDir = path.resolve(__dirname, 'packages')
+// 拼接 packages 和 target 组成目标目录
 const packageDir = path.resolve(packagesDir, process.env.TARGET)
 const resolve = p => path.resolve(packageDir, p)
+// 获取输出目录的 package.json 文件
 const pkg = require(resolve(`package.json`))
+// 获取打包配置
 const packageOptions = pkg.buildOptions || {}
+// 获取打包配置中的文件名，如果没有，以目标目录文件夹名称命名
 const name = packageOptions.filename || path.basename(packageDir)
 
 // ensure TS checks only once for each build
 let hasTSChecked = false
-
+// 每种格式的输出文件
 const outputConfigs = {
   'esm-bundler': {
     file: resolve(`dist/${name}.esm-bundler.js`),
@@ -118,6 +123,7 @@ function createConfig(format, output, plugins = []) {
   // during a single build.
   hasTSChecked = true
 
+  // 入口文件 如果传入format 中有 runtime 关键字，则走 runtime.ts 否则走 index.ts
   let entryFile = /runtime$/.test(format) ? `src/runtime.ts` : `src/index.ts`
 
   // the compat build needs both default AND named exports. This will cause

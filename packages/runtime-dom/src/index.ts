@@ -62,17 +62,25 @@ export const render = ((...args) => {
 export const hydrate = ((...args) => {
   ensureHydrationRenderer().hydrate(...args)
 }) as RootHydrateFunction
-
+// 用户调用的 createApp
 export const createApp = ((...args) => {
+  // 获取渲染器 renderer{
+  //   render,
+  //   hydrate,
+  //   createApp: createAppAPI(render, hydrate)
+  // }
+  // 调用它的 createApp 方法获取 app 实例
   const app = ensureRenderer().createApp(...args)
 
   if (__DEV__) {
     injectNativeTagCheck(app)
     injectCompilerOptionsCheck(app)
   }
-
+  // 从 app 实例解构 mount 方法
   const { mount } = app
+  // 改写 app.mount
   app.mount = (containerOrSelector: Element | ShadowRoot | string): any => {
+    // 根容器
     const container = normalizeContainer(containerOrSelector)
     if (!container) return
 
@@ -100,6 +108,7 @@ export const createApp = ((...args) => {
 
     // clear content before mounting
     container.innerHTML = ''
+    // 通过 mount 方法将组件挂载到跟容器（container）上
     const proxy = mount(container, false, container instanceof SVGElement)
     if (container instanceof Element) {
       container.removeAttribute('v-cloak')
@@ -107,7 +116,7 @@ export const createApp = ((...args) => {
     }
     return proxy
   }
-
+  // 返回创建的 app 实例
   return app
 }) as CreateAppFunction<Element>
 
@@ -180,6 +189,7 @@ function injectCompilerOptionsCheck(app: App) {
 function normalizeContainer(
   container: Element | ShadowRoot | string
 ): Element | null {
+  // 如果是string,说明是选择器，获取Dom
   if (isString(container)) {
     const res = document.querySelector(container)
     if (__DEV__ && !res) {
