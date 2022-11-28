@@ -1,18 +1,30 @@
 // @ts-check
+import { createRequire } from 'module'
+import { fileURLToPath } from 'url'
 import path from 'path'
 import ts from 'rollup-plugin-typescript2'
 import replace from '@rollup/plugin-replace'
 import json from '@rollup/plugin-json'
+import chalk from 'chalk'
+import commonJS from '@rollup/plugin-commonjs'
+import polyfillNode from 'rollup-plugin-polyfill-node'
+import { nodeResolve } from '@rollup/plugin-node-resolve'
+import terser from '@rollup/plugin-terser'
 
 if (!process.env.TARGET) {
   throw new Error('TARGET package must be specified via --environment flag.')
 }
-// 获取版本
+
+const require = createRequire(import.meta.url)
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
+
 const masterVersion = require('./package.json').version
-// 获取 packages 目录
+const consolidatePkg = require('@vue/consolidate/package.json')
+
 const packagesDir = path.resolve(__dirname, 'packages')
 // 拼接 packages 和 target 组成目标目录
 const packageDir = path.resolve(packagesDir, process.env.TARGET)
+
 const resolve = p => path.resolve(packageDir, p)
 // 获取输出目录的 package.json 文件
 const pkg = require(resolve(`package.json`))
@@ -81,7 +93,7 @@ export default packageConfigs
 
 function createConfig(format, output, plugins = []) {
   if (!output) {
-    console.log(require('chalk').yellow(`invalid format: "${format}"`))
+    console.log(chalk.yellow(`invalid format: "${format}"`))
     process.exit(1)
   }
 
@@ -89,6 +101,7 @@ function createConfig(format, output, plugins = []) {
     process.env.__DEV__ === 'false' || /\.prod\.js$/.test(output.file)
   const isBundlerESMBuild = /esm-bundler/.test(format)
   const isBrowserESMBuild = /esm-browser/.test(format)
+  const isServerRenderer = name === 'server-renderer'
   const isNodeBuild = format === 'cjs'
   const isGlobalBuild = /global/.test(format)
   const isCompatPackage = pkg.name === '@vue/compat'
@@ -111,6 +124,7 @@ function createConfig(format, output, plugins = []) {
     cacheRoot: path.resolve(__dirname, 'node_modules/.rts2_cache'),
     tsconfigOverride: {
       compilerOptions: {
+        target: isServerRenderer || isNodeBuild ? 'es2019' : 'es2015',
         sourceMap: output.sourcemap,
         declaration: shouldEmitDeclarations,
         declarationMap: shouldEmitDeclarations
@@ -136,12 +150,13 @@ function createConfig(format, output, plugins = []) {
   }
 
   let external = []
+  const treeShakenDeps = ['source-map', '@babel/parser', 'estree-walker']
 
   if (isGlobalBuild || isBrowserESMBuild || isCompatPackage) {
     if (!packageOptions.enableNonBrowserBranches) {
       // normal browser builds - non-browser only imports are tree-shaken,
       // they are only listed here to suppress warnings.
-      external = ['source-map', '@babel/parser', 'estree-walker']
+      external = treeShakenDeps
     }
   } else {
     // Node / esm-bundler builds.
@@ -149,7 +164,10 @@ function createConfig(format, output, plugins = []) {
     external = [
       ...Object.keys(pkg.dependencies || {}),
       ...Object.keys(pkg.peerDependencies || {}),
-      ...['path', 'url', 'stream'] // for @vue/compiler-sfc / server-renderer
+      // for @vue/compiler-sfc / server-renderer
+      ...['path', 'url', 'stream'],
+      // somehow these throw warnings for runtime-* package builds
+      ...treeShakenDeps
     ]
   }
 
@@ -157,11 +175,8 @@ function createConfig(format, output, plugins = []) {
   // requires a ton of template engines which should be ignored.
   let cjsIgnores = []
   if (pkg.name === '@vue/compiler-sfc') {
-    const consolidatePath = require.resolve('@vue/consolidate/package.json', {
-      paths: [packageDir]
-    })
     cjsIgnores = [
-      ...Object.keys(require(consolidatePath).devDependencies),
+      ...Object.keys(consolidatePkg.devDependencies),
       'vm',
       'crypto',
       'react-dom/server',
@@ -176,16 +191,12 @@ function createConfig(format, output, plugins = []) {
     (format === 'cjs' && Object.keys(pkg.devDependencies || {}).length) ||
     packageOptions.enableNonBrowserBranches
       ? [
-          // @ts-ignore
-          require('@rollup/plugin-commonjs')({
+          commonJS({
             sourceMap: false,
             ignore: cjsIgnores
           }),
-          ...(format === 'cjs'
-            ? []
-            : // @ts-ignore
-              [require('rollup-plugin-polyfill-node')()]),
-          require('@rollup/plugin-node-resolve').nodeResolve()
+          ...(format === 'cjs' ? [] : [polyfillNode()]),
+          nodeResolve()
         ]
       : []
 
@@ -208,7 +219,8 @@ function createConfig(format, output, plugins = []) {
           !packageOptions.enableNonBrowserBranches,
         isGlobalBuild,
         isNodeBuild,
-        isCompatBuild
+        isCompatBuild,
+        isServerRenderer
       ),
       ...nodePlugins,
       ...plugins
@@ -232,7 +244,8 @@ function createReplacePlugin(
   isBrowserBuild,
   isGlobalBuild,
   isNodeBuild,
-  isCompatBuild
+  isCompatBuild,
+  isServerRenderer
 ) {
   const replacements = {
     __COMMIT__: `"${process.env.COMMIT}"`,
@@ -252,7 +265,7 @@ function createReplacePlugin(
     // is targeting Node (SSR)?
     __NODE_JS__: isNodeBuild,
     // need SSR-specific branches?
-    __SSR__: isNodeBuild || isBundlerESMBuild,
+    __SSR__: isNodeBuild || isBundlerESMBuild || isServerRenderer,
 
     // for compiler-sfc browser build inlined deps
     ...(isBrowserESMBuild
@@ -303,7 +316,6 @@ function createProductionConfig(format) {
 }
 
 function createMinifiedConfig(format) {
-  const { terser } = require('rollup-plugin-terser')
   return createConfig(
     format,
     {

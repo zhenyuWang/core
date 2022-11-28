@@ -1037,7 +1037,7 @@ describe('compiler: parse', () => {
             offset: 0
           }
         },
-        ns: 0,
+        ns: Namespaces.HTML,
         props: [
           {
             loc: {
@@ -1054,7 +1054,7 @@ describe('compiler: parse', () => {
               }
             },
             name: 'class',
-            type: 6,
+            type: NodeTypes.ATTRIBUTE,
             value: {
               content: 'c',
               loc: {
@@ -1070,13 +1070,13 @@ describe('compiler: parse', () => {
                   offset: 11
                 }
               },
-              type: 2
+              type: NodeTypes.TEXT
             }
           }
         ],
         tag: 'div',
-        tagType: 0,
-        type: 1
+        tagType: ElementTypes.ELEMENT,
+        type: NodeTypes.ELEMENT
       })
     })
 
@@ -1980,6 +1980,17 @@ foo
       expect(ast.children[2].type).toBe(NodeTypes.INTERPOLATION)
     })
 
+    it('should NOT remove whitespaces w/ newline between interpolation and comment', () => {
+      const ast = parse(`<!-- foo --> \n {{msg}}`)
+      expect(ast.children.length).toBe(3)
+      expect(ast.children[0].type).toBe(NodeTypes.COMMENT)
+      expect(ast.children[1]).toMatchObject({
+        type: NodeTypes.TEXT,
+        content: ' '
+      })
+      expect(ast.children[2].type).toBe(NodeTypes.INTERPOLATION)
+    })
+    
     it('should NOT remove whitespaces w/o newline between elements', () => {
       const ast = parse(`<div/> <div/> <div/>`)
       expect(ast.children.length).toBe(5)
@@ -2023,7 +2034,7 @@ foo
         isPreTag: tag => tag === 'pre'
       })
       const elementAfterPre = ast.children[1] as ElementNode
-      // should not affect the <span> and condense its whitepsace inside
+      // should not affect the <span> and condense its whitespace inside
       expect((elementAfterPre.children[0] as TextNode).content).toBe(` foo bar`)
     })
 

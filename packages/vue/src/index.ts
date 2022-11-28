@@ -51,18 +51,21 @@ function compileToFunction(
     // 如果获取到了节点，更新 template 为 dom innerHTML，否则为空串
     template = el ? el.innerHTML : ``
   }
-  // 编译模板字符串，得到一个 render 函数
-  const { code } = compile(
-    template,
-    extend(
-      {
-        hoistStatic: true,
-        onError: __DEV__ ? onError : undefined,
-        onWarn: __DEV__ ? e => onError(e, true) : NOOP
-      } as CompilerOptions,
-      options
-    )
+
+  const opts = extend(
+    {
+      hoistStatic: true,
+      onError: __DEV__ ? onError : undefined,
+      onWarn: __DEV__ ? e => onError(e, true) : NOOP
+    } as CompilerOptions,
+    options
   )
+
+  if (!opts.isCustomElement && typeof customElements !== 'undefined') {
+    opts.isCustomElement = tag => !!customElements.get(tag)
+  }
+
+  const { code } = compile(template, opts)
 
   function onError(err: CompilerError, asWarning = false) {
     const message = asWarning

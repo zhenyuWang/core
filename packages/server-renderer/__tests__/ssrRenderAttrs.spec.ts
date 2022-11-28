@@ -15,6 +15,8 @@ describe('ssr: renderAttrs', () => {
     expect(
       ssrRenderAttrs({
         key: 1,
+        ref_key: 'foo',
+        ref_for: 'bar',
         ref: () => {},
         onClick: () => {}
       })
@@ -96,6 +98,17 @@ describe('ssr: renderAttrs', () => {
       )
     ).toBe(` fooBar="ok"`)
   })
+
+  test('preserve name on svg elements', () => {
+    expect(
+      ssrRenderAttrs(
+        {
+          viewBox: 'foo'
+        },
+        'svg'
+      )
+    ).toBe(` viewBox="foo"`)
+  })
 })
 
 describe('ssr: renderAttr', () => {
@@ -141,10 +154,12 @@ describe('ssr: renderStyle', () => {
     expect(
       ssrRenderAttrs({
         style: {
-          color: 'red'
+          color: 'red',
+          '--a': 2,
+          '-webkit-line-clamp': 1
         }
       })
-    ).toBe(` style="color:red;"`)
+    ).toBe(` style="color:red;--a:2;-webkit-line-clamp:1;"`)
   })
 
   test('standalone', () => {
@@ -165,7 +180,7 @@ describe('ssr: renderStyle', () => {
   test('number handling', () => {
     expect(
       ssrRenderStyle({
-        fontSize: 15, // should be ignored since font-size requires unit
+        fontSize: null, // invalid value should be ignored
         opacity: 0.5
       })
     ).toBe(`opacity:0.5;`)

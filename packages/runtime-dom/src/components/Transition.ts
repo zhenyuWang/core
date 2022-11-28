@@ -2,7 +2,7 @@ import {
   BaseTransition,
   BaseTransitionProps,
   h,
-  warn,
+  assertNumber,
   FunctionalComponent,
   compatUtils,
   DeprecationTypes
@@ -12,9 +12,11 @@ import { isObject, toNumber, extend, isArray } from '@vue/shared'
 const TRANSITION = 'transition'
 const ANIMATION = 'animation'
 
+type AnimationTypes = typeof TRANSITION | typeof ANIMATION
+
 export interface TransitionProps extends BaseTransitionProps<Element> {
   name?: string
-  type?: typeof TRANSITION | typeof ANIMATION
+  type?: AnimationTypes
   css?: boolean
   duration?: number | { enter: number; leave: number }
   // custom transition classes
@@ -174,7 +176,12 @@ export function resolveTransitionProps(
     done && done()
   }
 
-  const finishLeave = (el: Element, done?: () => void) => {
+  const finishLeave = (
+    el: Element & { _isLeaving?: boolean },
+    done?: () => void
+  ) => {
+    el._isLeaving = false
+    removeTransitionClass(el, leaveFromClass)
     removeTransitionClass(el, leaveToClass)
     removeTransitionClass(el, leaveActiveClass)
     done && done()
@@ -220,7 +227,8 @@ export function resolveTransitionProps(
     },
     onEnter: makeEnterHook(false),
     onAppear: makeEnterHook(true),
-    onLeave(el, done) {
+    onLeave(el: Element & { _isLeaving?: boolean }, done) {
+      el._isLeaving = true
       const resolve = () => finishLeave(el, done)
       addTransitionClass(el, leaveFromClass)
       if (__COMPAT__ && legacyClassEnabled) {
@@ -230,6 +238,10 @@ export function resolveTransitionProps(
       forceReflow()
       addTransitionClass(el, leaveActiveClass)
       nextFrame(() => {
+        if (!el._isLeaving) {
+          // cancelled
+          return
+        }
         removeTransitionClass(el, leaveFromClass)
         if (__COMPAT__ && legacyClassEnabled) {
           removeTransitionClass(el, legacyLeaveFromClass)
@@ -271,22 +283,10 @@ function normalizeDuration(
 
 function NumberOf(val: unknown): number {
   const res = toNumber(val)
-  if (__DEV__) validateDuration(res)
-  return res
-}
-
-function validateDuration(val: unknown) {
-  if (typeof val !== 'number') {
-    warn(
-      `<transition> explicit duration is not a valid number - ` +
-        `got ${JSON.stringify(val)}.`
-    )
-  } else if (isNaN(val)) {
-    warn(
-      `<transition> explicit duration is NaN - ` +
-        'the duration expression might be incorrect.'
-    )
+  if (__DEV__) {
+    assertNumber(res, '<transition> explicit duration')
   }
+  return res
 }
 
 export function addTransitionClass(el: Element, cls: string) {
@@ -358,24 +358,33 @@ function whenTransitionEnds(
 }
 
 interface CSSTransitionInfo {
-  type: typeof TRANSITION | typeof ANIMATION | null
+  type: AnimationTypes | null
   propCount: number
   timeout: number
   hasTransform: boolean
 }
 
+type AnimationProperties = 'Delay' | 'Duration'
+type StylePropertiesKey =
+  | `${AnimationTypes}${AnimationProperties}`
+  | `${typeof TRANSITION}Property`
+
 export function getTransitionInfo(
   el: Element,
   expectedType?: TransitionProps['type']
 ): CSSTransitionInfo {
-  const styles: any = window.getComputedStyle(el)
+  const styles = window.getComputedStyle(el) as Pick<
+    CSSStyleDeclaration,
+    StylePropertiesKey
+  >
   // JSDOM may return undefined for transition properties
-  const getStyleProperties = (key: string) => (styles[key] || '').split(', ')
-  const transitionDelays = getStyleProperties(TRANSITION + 'Delay')
-  const transitionDurations = getStyleProperties(TRANSITION + 'Duration')
+  const getStyleProperties = (key: StylePropertiesKey) =>
+    (styles[key] || '').split(', ')
+  const transitionDelays = getStyleProperties(`${TRANSITION}Delay`)
+  const transitionDurations = getStyleProperties(`${TRANSITION}Duration`)
   const transitionTimeout = getTimeout(transitionDelays, transitionDurations)
-  const animationDelays = getStyleProperties(ANIMATION + 'Delay')
-  const animationDurations = getStyleProperties(ANIMATION + 'Duration')
+  const animationDelays = getStyleProperties(`${ANIMATION}Delay`)
+  const animationDurations = getStyleProperties(`${ANIMATION}Duration`)
   const animationTimeout = getTimeout(animationDelays, animationDurations)
 
   let type: CSSTransitionInfo['type'] = null
@@ -410,7 +419,9 @@ export function getTransitionInfo(
   }
   const hasTransform =
     type === TRANSITION &&
-    /\b(transform|all)(,|$)/.test(styles[TRANSITION + 'Property'])
+    /\b(transform|all)(,|$)/.test(
+      getStyleProperties(`${TRANSITION}Property`).toString()
+    )
   return {
     type,
     timeout,

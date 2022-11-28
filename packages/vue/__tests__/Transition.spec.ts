@@ -328,7 +328,6 @@ describe('e2e: Transition', () => {
           'test-leave-from',
           'test-leave-active'
         ])
-        // todo test event with arguments. Note: not get dom, get object. '{}'
         expect(beforeLeaveSpy).toBeCalled()
         expect(onLeaveSpy).toBeCalled()
         expect(afterLeaveSpy).not.toBeCalled()
@@ -362,6 +361,122 @@ describe('e2e: Transition', () => {
         await transitionFinish()
         expect(await html('#container')).toBe('<div class="test">content</div>')
         expect(afterEnterSpy).toBeCalled()
+      },
+      E2E_TIMEOUT
+    )
+
+    test(
+      'events with arguments',
+      async () => {
+        const beforeLeaveSpy = jest.fn()
+        const onLeaveSpy = jest.fn()
+        const afterLeaveSpy = jest.fn()
+        const beforeEnterSpy = jest.fn()
+        const onEnterSpy = jest.fn()
+        const afterEnterSpy = jest.fn()
+
+        await page().exposeFunction('onLeaveSpy', onLeaveSpy)
+        await page().exposeFunction('onEnterSpy', onEnterSpy)
+        await page().exposeFunction('beforeLeaveSpy', beforeLeaveSpy)
+        await page().exposeFunction('beforeEnterSpy', beforeEnterSpy)
+        await page().exposeFunction('afterLeaveSpy', afterLeaveSpy)
+        await page().exposeFunction('afterEnterSpy', afterEnterSpy)
+
+        await page().evaluate(() => {
+          const {
+            beforeEnterSpy,
+            onEnterSpy,
+            afterEnterSpy,
+            beforeLeaveSpy,
+            onLeaveSpy,
+            afterLeaveSpy
+          } = window as any
+          const { createApp, ref } = (window as any).Vue
+          createApp({
+            template: `
+            <div id="container">
+              <transition
+                :css="false"
+                name="test"
+                @before-enter="beforeEnterSpy"
+                @enter="onEnterSpy"
+                @after-enter="afterEnterSpy"
+                @before-leave="beforeLeaveSpy"
+                @leave="onLeaveSpy"
+                @after-leave="afterLeaveSpy">
+                <div v-if="toggle" class="test">content</div>
+              </transition>
+            </div>
+            <button id="toggleBtn" @click="click">button</button>
+          `,
+            setup: () => {
+              const toggle = ref(true)
+              const click = () => (toggle.value = !toggle.value)
+              return {
+                toggle,
+                click,
+                beforeEnterSpy(el: Element) {
+                  beforeEnterSpy()
+                  el.classList.add('before-enter')
+                },
+                onEnterSpy(el: Element, done: () => void) {
+                  onEnterSpy()
+                  el.classList.add('enter')
+                  setTimeout(done, 200)
+                },
+                afterEnterSpy(el: Element) {
+                  afterEnterSpy()
+                  el.classList.add('after-enter')
+                },
+                beforeLeaveSpy(el: HTMLDivElement) {
+                  beforeLeaveSpy()
+                  el.classList.add('before-leave')
+                },
+                onLeaveSpy(el: HTMLDivElement, done: () => void) {
+                  onLeaveSpy()
+                  el.classList.add('leave')
+                  setTimeout(done, 200)
+                },
+                afterLeaveSpy: (el: Element) => {
+                  afterLeaveSpy()
+                }
+              }
+            }
+          }).mount('#app')
+        })
+        expect(await html('#container')).toBe('<div class="test">content</div>')
+
+        // leave
+        await click('#toggleBtn')
+        expect(beforeLeaveSpy).toBeCalled()
+        expect(onLeaveSpy).toBeCalled()
+        expect(afterLeaveSpy).not.toBeCalled()
+        expect(await classList('.test')).toStrictEqual([
+          'test',
+          'before-leave',
+          'leave'
+        ])
+
+        await timeout(200 + buffer)
+        expect(afterLeaveSpy).toBeCalled()
+        expect(await html('#container')).toBe('<!--v-if-->')
+
+        // enter
+        await click('#toggleBtn')
+        expect(beforeEnterSpy).toBeCalled()
+        expect(onEnterSpy).toBeCalled()
+        expect(afterEnterSpy).not.toBeCalled()
+        expect(await classList('.test')).toStrictEqual([
+          'test',
+          'before-enter',
+          'enter'
+        ])
+
+        await timeout(200 + buffer)
+        expect(afterEnterSpy).toBeCalled()
+        expect(await html('#container')).toBe(
+          '<div class="test before-enter enter after-enter">content</div>'
+        )
       },
       E2E_TIMEOUT
     )
@@ -1614,8 +1729,17 @@ describe('e2e: Transition', () => {
     test(
       'transition on appear with v-show',
       async () => {
+        const beforeEnterSpy = jest.fn()
+        const onEnterSpy = jest.fn()
+        const afterEnterSpy = jest.fn()
+
+        await page().exposeFunction('onEnterSpy', onEnterSpy)
+        await page().exposeFunction('beforeEnterSpy', beforeEnterSpy)
+        await page().exposeFunction('afterEnterSpy', afterEnterSpy)
+
         const appearClass = await page().evaluate(async () => {
           const { createApp, ref } = (window as any).Vue
+          const { beforeEnterSpy, onEnterSpy, afterEnterSpy } = window as any
           createApp({
             template: `
               <div id="container">
@@ -1623,7 +1747,10 @@ describe('e2e: Transition', () => {
                             appear
                             appear-from-class="test-appear-from"
                             appear-to-class="test-appear-to"
-                            appear-active-class="test-appear-active">
+                            appear-active-class="test-appear-active"
+                            @before-enter="beforeEnterSpy"
+                            @enter="onEnterSpy"
+                            @after-enter="afterEnterSpy">
                   <div v-show="toggle" class="test">content</div>
                 </transition>
               </div>
@@ -1632,13 +1759,24 @@ describe('e2e: Transition', () => {
             setup: () => {
               const toggle = ref(true)
               const click = () => (toggle.value = !toggle.value)
-              return { toggle, click }
+              return {
+                toggle,
+                click,
+                beforeEnterSpy,
+                onEnterSpy,
+                afterEnterSpy
+              }
             }
           }).mount('#app')
           return Promise.resolve().then(() => {
             return document.querySelector('.test')!.className.split(/\s+/g)
           })
         })
+
+        expect(beforeEnterSpy).toBeCalledTimes(1)
+        expect(onEnterSpy).toBeCalledTimes(1)
+        expect(afterEnterSpy).toBeCalledTimes(0)
+
         // appear
         expect(appearClass).toStrictEqual([
           'test',
@@ -1653,6 +1791,10 @@ describe('e2e: Transition', () => {
         ])
         await transitionFinish()
         expect(await html('#container')).toBe('<div class="test">content</div>')
+
+        expect(beforeEnterSpy).toBeCalledTimes(1)
+        expect(onEnterSpy).toBeCalledTimes(1)
+        expect(afterEnterSpy).toBeCalledTimes(1)
 
         // leave
         expect(await classWhenTransitionStart()).toStrictEqual([
@@ -1685,6 +1827,79 @@ describe('e2e: Transition', () => {
         expect(await html('#container')).toBe(
           '<div class="test" style="">content</div>'
         )
+      },
+      E2E_TIMEOUT
+    )
+
+    // #4845
+    test(
+      'transition events should not call onEnter with v-show false',
+      async () => {
+        const beforeEnterSpy = jest.fn()
+        const onEnterSpy = jest.fn()
+        const afterEnterSpy = jest.fn()
+
+        await page().exposeFunction('onEnterSpy', onEnterSpy)
+        await page().exposeFunction('beforeEnterSpy', beforeEnterSpy)
+        await page().exposeFunction('afterEnterSpy', afterEnterSpy)
+
+        await page().evaluate(() => {
+          const { beforeEnterSpy, onEnterSpy, afterEnterSpy } = window as any
+          const { createApp, ref } = (window as any).Vue
+          createApp({
+            template: `
+            <div id="container">
+              <transition
+                name="test"
+                appear
+                @before-enter="beforeEnterSpy"
+                @enter="onEnterSpy"
+                @after-enter="afterEnterSpy">
+                <div v-show="toggle" class="test">content</div>
+              </transition>
+            </div>
+            <button id="toggleBtn" @click="click">button</button>
+          `,
+            setup: () => {
+              const toggle = ref(false)
+              const click = () => (toggle.value = !toggle.value)
+              return {
+                toggle,
+                click,
+                beforeEnterSpy,
+                onEnterSpy,
+                afterEnterSpy
+              }
+            }
+          }).mount('#app')
+        })
+        await nextTick()
+
+        expect(await isVisible('.test')).toBe(false)
+
+        expect(beforeEnterSpy).toBeCalledTimes(0)
+        expect(onEnterSpy).toBeCalledTimes(0)
+        // enter
+        expect(await classWhenTransitionStart()).toStrictEqual([
+          'test',
+          'test-enter-from',
+          'test-enter-active'
+        ])
+        expect(beforeEnterSpy).toBeCalledTimes(1)
+        expect(onEnterSpy).toBeCalledTimes(1)
+        expect(afterEnterSpy).not.toBeCalled()
+        await nextFrame()
+        expect(await classList('.test')).toStrictEqual([
+          'test',
+          'test-enter-active',
+          'test-enter-to'
+        ])
+        expect(afterEnterSpy).not.toBeCalled()
+        await transitionFinish()
+        expect(await html('#container')).toBe(
+          '<div class="test" style="">content</div>'
+        )
+        expect(afterEnterSpy).toBeCalled()
       },
       E2E_TIMEOUT
     )
@@ -1979,9 +2194,7 @@ describe('e2e: Transition', () => {
         </div>
       `
     }).mount(document.createElement('div'))
-    expect(
-      `invalid <transition> mode: none`
-    ).toHaveBeenWarned()
+    expect(`invalid <transition> mode: none`).toHaveBeenWarned()
   })
 
   // #3227
@@ -2023,4 +2236,74 @@ describe('e2e: Transition', () => {
     expect(outerSpy).toHaveBeenCalledTimes(1)
     expect(root.innerHTML).toBe(`<!---->`)
   })
+
+  test(
+    'should work with dev root fragment',
+    async () => {
+      await page().evaluate(() => {
+        const { createApp, ref } = (window as any).Vue
+        createApp({
+          components: {
+            Comp: {
+              template: `
+                  <!-- Broken! -->
+                  <div><slot /></div>
+                `
+            }
+          },
+          template: `
+            <div id="container">
+              <transition>
+                <Comp class="test" v-if="toggle">
+                  <div>content</div>
+                </Comp>
+              </transition>
+            </div>
+            <button id="toggleBtn" @click="click">button</button>
+          `,
+          setup: () => {
+            const toggle = ref(true)
+            const click = () => (toggle.value = !toggle.value)
+            return { toggle, click }
+          }
+        }).mount('#app')
+      })
+      expect(await html('#container')).toBe(
+        '<!-- Broken! --><div class="test"><div>content</div></div>'
+      )
+
+      // leave
+      expect(await classWhenTransitionStart()).toStrictEqual([
+        'test',
+        'v-leave-from',
+        'v-leave-active'
+      ])
+      await nextFrame()
+      expect(await classList('.test')).toStrictEqual([
+        'test',
+        'v-leave-active',
+        'v-leave-to'
+      ])
+      await transitionFinish()
+      expect(await html('#container')).toBe('<!--v-if-->')
+
+      // enter
+      expect(await classWhenTransitionStart()).toStrictEqual([
+        'test',
+        'v-enter-from',
+        'v-enter-active'
+      ])
+      await nextFrame()
+      expect(await classList('.test')).toStrictEqual([
+        'test',
+        'v-enter-active',
+        'v-enter-to'
+      ])
+      await transitionFinish()
+      expect(await html('#container')).toBe(
+        '<!-- Broken! --><div class="test"><div>content</div></div>'
+      )
+    },
+    E2E_TIMEOUT
+  )
 })
